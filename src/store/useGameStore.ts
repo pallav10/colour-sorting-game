@@ -4,8 +4,8 @@
  */
 
 import { create } from 'zustand';
-import type { GameState, Tube, LevelConfig } from '../core/types';
-import { applyMoveToTubes } from '../core/moveExecution';
+import type { GameState, Tube, LevelConfig, Segment } from '../core/types';
+import { applyMoveToTubes, getContiguousTopSegments } from '../core/moveExecution';
 import { isLevelComplete } from '../core/winCondition';
 import { undoLastMove, recordMove, canUndo as canUndoMove } from '../core/undoSystem';
 import { generateProgressiveLevel } from '../core/levelGenerator';
@@ -38,10 +38,16 @@ interface GameStore extends GameState {
   bestScores: Record<number, number>;
   // Track if game has started
   gameStarted: boolean;
+  // Track if segments are pouring
+  isPouringToTube: number | null;
+  pouringSegments: Segment[] | null;
+  // Store the result tubes for completion
+  pendingTubes: Tube[] | null;
 
   // Actions
   selectTube: (tubeId: number | null) => void;
-  attemptMove: (destTubeId: number, onAnimationComplete?: () => void) => void;
+  attemptMove: (destTubeId: number) => void;
+  completePour: () => void;
   undo: () => void;
   restart: () => void;
   loadLevel: (config: LevelConfig) => void;
@@ -73,6 +79,9 @@ export const useGameStore = create<GameStore>((set, get) => {
     currentLevel: 1,
     bestScores: loadBestScores(),
     gameStarted: false,
+    isPouringToTube: null,
+    pouringSegments: null,
+    pendingTubes: null,
 
     // Select a tube (first tap)
     selectTube: (tubeId) => {
@@ -80,7 +89,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     // Attempt to move to a destination (second tap)
-    attemptMove: (destTubeId, onAnimationComplete) => {
+    attemptMove: (destTubeId) => {
       const state = get();
       const { selectedTubeId, tubes, moveHistory } = state;
 
@@ -100,51 +109,49 @@ export const useGameStore = create<GameStore>((set, get) => {
       const result = applyMoveToTubes(tubes, selectedTubeId, destTubeId);
 
       if (result.success) {
-        // Keep selection while animating, update state after animation
-        if (onAnimationComplete) {
-          // Animation will happen, then callback will update state
-          setTimeout(() => {
-            const newHistory = recordMove(moveHistory, selectedTubeId, destTubeId, result.segmentsMoved);
-            const completed = isLevelComplete(result.tubes);
-            const newMoveCount = state.moveCount + 1;
+        const newHistory = recordMove(moveHistory, selectedTubeId, destTubeId, result.segmentsMoved);
+        const newMoveCount = state.moveCount + 1;
 
-            set({
-              tubes: result.tubes,
-              moveHistory: newHistory,
-              moveCount: newMoveCount,
-              selectedTubeId: null,
-              isCompleted: completed,
-            });
+        // Get the segments that will fly BEFORE updating tubes
+        const sourceTube = tubes.find((t) => t.id === selectedTubeId);
+        const flyingSegments = sourceTube ? getContiguousTopSegments(sourceTube) : [];
 
-            // Update best score if level completed
-            if (completed) {
-              get().updateBestScore(state.currentLevel, newMoveCount);
-            }
-
-            onAnimationComplete();
-          }, 600); // Animation duration
-        } else {
-          // No animation, update immediately
-          const newHistory = recordMove(moveHistory, selectedTubeId, destTubeId, result.segmentsMoved);
-          const completed = isLevelComplete(result.tubes);
-          const newMoveCount = state.moveCount + 1;
-
-          set({
-            tubes: result.tubes,
-            moveHistory: newHistory,
-            moveCount: newMoveCount,
-            selectedTubeId: null,
-            isCompleted: completed,
-          });
-
-          // Update best score if level completed
-          if (completed) {
-            get().updateBestScore(state.currentLevel, newMoveCount);
-          }
-        }
+        // Start pouring animation - update tubes but keep selection
+        set({
+          tubes: result.tubes,
+          moveHistory: newHistory,
+          moveCount: newMoveCount,
+          isPouringToTube: destTubeId,
+          pouringSegments: flyingSegments,
+          pendingTubes: result.tubes,
+          // Keep selectedTubeId so HoveringSegments stay rendered
+        });
       } else {
         // Invalid move - just deselect
         set({ selectedTubeId: null });
+      }
+    },
+
+    // Complete the pouring animation
+    completePour: () => {
+      const state = get();
+      const { pendingTubes, moveCount, currentLevel } = state;
+
+      if (!pendingTubes) return;
+
+      const completed = isLevelComplete(pendingTubes);
+
+      set({
+        selectedTubeId: null,
+        isPouringToTube: null,
+        pouringSegments: null,
+        pendingTubes: null,
+        isCompleted: completed,
+      });
+
+      // Update best score if level completed
+      if (completed) {
+        get().updateBestScore(currentLevel, moveCount);
       }
     },
 

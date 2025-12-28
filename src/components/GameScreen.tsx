@@ -10,21 +10,21 @@ import { useShakeAnimation } from '../hooks/useAnimation';
 import { Header } from './Header';
 import { TubeContainer } from './TubeContainer';
 import { CompletionModal } from './CompletionModal';
-import { PouringAnimation } from './PouringAnimation';
 import { validateMove } from '../core/moveValidation';
-import { getContiguousTopSegments } from '../core/moveExecution';
-import type { Segment } from '../core/types';
 
 export const GameScreen = () => {
   const {
     tubes,
     selectedTubeId,
+    isPouringToTube,
+    pouringSegments,
     moveCount,
     currentLevel,
     isCompleted,
     canUndo,
     getBestScore,
     attemptMove,
+    completePour,
     undo,
     restart,
     nextLevel,
@@ -35,11 +35,13 @@ export const GameScreen = () => {
 
   const { shakingTubeId, triggerShake } = useShakeAnimation();
 
-  // Pour animation state
-  const [pouringSegments, setPouringSegments] = useState<Segment[] | null>(null);
-  const [sourcePos, setSourcePos] = useState({ x: 0, y: 0 });
-  const [destPos, setDestPos] = useState({ x: 0, y: 0 });
+  // Store tube element refs for position calculation
   const tubeRefs = useRef<Map<number, HTMLElement>>(new Map());
+
+  // Handle animation complete
+  const handlePouringComplete = useCallback(() => {
+    completePour();
+  }, [completePour]);
 
   const handleTubeClick = useCallback(
     (tubeId: number, element?: HTMLElement) => {
@@ -64,35 +66,12 @@ export const GameScreen = () => {
           }
 
           // Valid move - start pour animation
-          const sourceEl = tubeRefs.current.get(selectedTubeId);
-          const destEl = tubeRefs.current.get(tubeId);
-
-          if (sourceEl && destEl) {
-            const sourceRect = sourceEl.getBoundingClientRect();
-            const destRect = destEl.getBoundingClientRect();
-
-            const segments = getContiguousTopSegments(sourceTube);
-
-            setSourcePos({
-              x: sourceRect.left,
-              y: sourceRect.top - 220, // Account for much higher hover offset
-            });
-            setDestPos({
-              x: destRect.left,
-              y: destRect.bottom - ((destTube.segments.length + segments.length) * 52), // Stack on top of existing segments (48px + 4px gap)
-            });
-            setPouringSegments(segments);
-
-            // Call attemptMove with callback to execute after animation
-            attemptMove(tubeId, () => {
-              setPouringSegments(null);
-            });
-            return;
-          }
+          attemptMove(tubeId);
+          return;
         }
       }
 
-      // Always call attemptMove for selection logic
+      // Select/deselect tube
       attemptMove(tubeId);
     },
     [selectedTubeId, tubes, triggerShake, attemptMove]
@@ -117,8 +96,12 @@ export const GameScreen = () => {
           key={`level-${currentLevel}`}
           tubes={tubes}
           selectedTubeId={selectedTubeId}
+          isPouringToTube={isPouringToTube}
+          pouringSegments={pouringSegments}
           shakingTubeId={shakingTubeId}
           onTubeClick={handleTubeClick}
+          onPouringComplete={handlePouringComplete}
+          tubeRefs={tubeRefs}
         />
       </main>
 
@@ -161,18 +144,6 @@ export const GameScreen = () => {
           onRestart={restart}
         />
       )}
-
-      {/* Pouring animation overlay */}
-      <AnimatePresence>
-        {pouringSegments && (
-          <PouringAnimation
-            segments={pouringSegments}
-            sourcePosition={sourcePos}
-            destPosition={destPos}
-            onComplete={() => setPouringSegments(null)}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 };
