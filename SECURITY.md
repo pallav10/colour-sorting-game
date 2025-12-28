@@ -11,7 +11,7 @@
 If you discover a security vulnerability in this project, please report it responsibly:
 
 1. **Do NOT** open a public issue
-2. Email the maintainer at: [your-email@example.com]
+2. Email the maintainer at: [pallav8parikh@gmail.com]
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
