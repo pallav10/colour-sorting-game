@@ -8,8 +8,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface CompletionModalProps {
   level: number;
   moveCount: number;
-  optimalMoves: number | null;
-  stars: number;
   onNextLevel: () => void;
   onRestart: () => void;
 }
@@ -45,8 +43,6 @@ const Confetti = ({ delay }: { delay: number }) => {
 export const CompletionModal = ({
   level,
   moveCount,
-  optimalMoves,
-  stars,
   onNextLevel,
   onRestart,
 }: CompletionModalProps) => {
@@ -111,50 +107,27 @@ export const CompletionModal = ({
             >
               You solved Level {level} in {moveCount} moves
             </motion.p>
-
-            {optimalMoves !== null && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.5 }}
-                className="text-white/60 text-sm mt-1"
-              >
-                Optimal: {optimalMoves} moves
-              </motion.p>
-            )}
           </div>
 
           {/* Stars */}
           <div className="flex justify-center gap-2 mb-6">
-            {[1, 2, 3].map((starNumber) => (
+            {[1, 2, 3].map((star) => (
               <motion.span
-                key={starNumber}
+                key={star}
                 initial={{ scale: 0, rotate: -180 }}
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{
-                  delay: 0.4 + starNumber * 0.1,
+                  delay: 0.4 + star * 0.1,
                   type: 'spring',
                   stiffness: 300,
                   damping: 10,
                 }}
                 className="text-4xl"
               >
-                {starNumber <= stars ? '⭐' : '☆'}
+                ⭐
               </motion.span>
             ))}
           </div>
-
-          {/* Star rating message */}
-          <motion.p
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.7 }}
-            className="text-center text-white/90 font-semibold mb-6"
-          >
-            {stars === 3 && 'Perfect! Optimal solution!'}
-            {stars === 2 && 'Great job!'}
-            {stars === 1 && 'Level Complete!'}
-          </motion.p>
 
           {/* Action buttons */}
           <motion.div

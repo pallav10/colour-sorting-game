@@ -10,14 +10,9 @@ import { isLevelComplete } from '../core/winCondition';
 import { undoLastMove, recordMove, canUndo as canUndoMove } from '../core/undoSystem';
 import { generateProgressiveLevel } from '../core/levelGenerator';
 import { cloneTubes } from '../utils/helpers';
-import { calculateOptimalMoves } from '../core/optimalSolver';
-import { calculateStarRating } from '../core/starRating';
 
 // Best scores storage key
 const BEST_SCORES_KEY = 'colorSortGame_bestScores';
-
-// Star ratings storage key
-const STAR_RATINGS_KEY = 'colorSortGame_starRatings';
 
 // Load best scores from localStorage
 const loadBestScores = (): Record<number, number> => {
@@ -38,30 +33,9 @@ const saveBestScores = (scores: Record<number, number>) => {
   }
 };
 
-// Load star ratings from localStorage
-const loadStarRatings = (): Record<number, number> => {
-  try {
-    const stored = localStorage.getItem(STAR_RATINGS_KEY);
-    return stored ? JSON.parse(stored) : {};
-  } catch {
-    return {};
-  }
-};
-
-// Save star ratings to localStorage
-const saveStarRatings = (ratings: Record<number, number>) => {
-  try {
-    localStorage.setItem(STAR_RATINGS_KEY, JSON.stringify(ratings));
-  } catch {
-    // Ignore localStorage errors
-  }
-};
-
 interface GameStore extends GameState {
   // Best scores for each level
   bestScores: Record<number, number>;
-  // Star ratings for each level (1-3 stars)
-  starRatings: Record<number, number>;
   // Track if game has started
   gameStarted: boolean;
 
@@ -73,7 +47,6 @@ interface GameStore extends GameState {
   loadLevel: (config: LevelConfig) => void;
   nextLevel: () => void;
   updateBestScore: (levelId: number, moves: number) => void;
-  updateStarRating: (levelId: number, stars: number) => void;
   startGame: (startLevel: number) => void;
   returnToMenu: () => void;
   resetAllBestScores: () => void;
@@ -82,8 +55,6 @@ interface GameStore extends GameState {
   canUndo: () => boolean;
   getSelectedTube: () => Tube | null;
   getBestScore: (levelId: number) => number | null;
-  getStarRating: (levelId: number) => number | null;
-  getCurrentStarRating: () => number;
 }
 
 export const useGameStore = create<GameStore>((set, get) => {
@@ -100,9 +71,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     isCompleted: false,
     moveCount: 0,
     currentLevel: 1,
-    optimalMoves: null,
     bestScores: loadBestScores(),
-    starRatings: loadStarRatings(),
     gameStarted: false,
 
     // Select a tube (first tap)
@@ -147,11 +116,9 @@ export const useGameStore = create<GameStore>((set, get) => {
               isCompleted: completed,
             });
 
-            // Update best score and star rating if level completed
+            // Update best score if level completed
             if (completed) {
               get().updateBestScore(state.currentLevel, newMoveCount);
-              const stars = calculateStarRating(newMoveCount, state.optimalMoves);
-              get().updateStarRating(state.currentLevel, stars);
             }
 
             onAnimationComplete();
@@ -170,11 +137,9 @@ export const useGameStore = create<GameStore>((set, get) => {
             isCompleted: completed,
           });
 
-          // Update best score and star rating if level completed
+          // Update best score if level completed
           if (completed) {
             get().updateBestScore(state.currentLevel, newMoveCount);
-            const stars = calculateStarRating(newMoveCount, state.optimalMoves);
-            get().updateStarRating(state.currentLevel, stars);
           }
         }
       } else {
@@ -203,37 +168,25 @@ export const useGameStore = create<GameStore>((set, get) => {
     // Restart the current level
     restart: () => {
       const state = get();
-      const clonedTubes = cloneTubes(state.levelConfig.initialTubes);
-
-      // Recalculate optimal moves for the restarted level
-      const optimal = calculateOptimalMoves(clonedTubes);
-
       set({
-        tubes: clonedTubes,
+        tubes: cloneTubes(state.levelConfig.initialTubes),
         moveHistory: [],
         moveCount: 0,
         selectedTubeId: null,
         isCompleted: false,
-        optimalMoves: optimal,
       });
     },
 
     // Load a specific level configuration
     loadLevel: (config) => {
-      const clonedTubes = cloneTubes(config.initialTubes);
-
-      // Calculate optimal moves for this level
-      const optimal = calculateOptimalMoves(clonedTubes);
-
       set({
         levelConfig: config,
-        tubes: clonedTubes,
+        tubes: cloneTubes(config.initialTubes),
         moveHistory: [],
         moveCount: 0,
         selectedTubeId: null,
         isCompleted: false,
         currentLevel: config.levelId,
-        optimalMoves: optimal,
       });
     },
 
@@ -245,9 +198,6 @@ export const useGameStore = create<GameStore>((set, get) => {
       const nextLevelConfig = generateProgressiveLevel(nextLevelId);
       const freshTubes = cloneTubes(nextLevelConfig.initialTubes);
 
-      // Calculate optimal moves for the next level
-      const optimal = calculateOptimalMoves(freshTubes);
-
       set({
         levelConfig: nextLevelConfig,
         tubes: freshTubes,
@@ -256,7 +206,6 @@ export const useGameStore = create<GameStore>((set, get) => {
         selectedTubeId: null,
         isCompleted: false,
         currentLevel: nextLevelId,
-        optimalMoves: optimal,
       });
     },
 
@@ -292,38 +241,10 @@ export const useGameStore = create<GameStore>((set, get) => {
       return state.bestScores[levelId] ?? null;
     },
 
-    // Update star rating for a level
-    updateStarRating: (levelId, stars) => {
-      const state = get();
-      const currentStars = state.starRatings[levelId];
-
-      // Update if no rating exists or new rating is better
-      if (currentStars === undefined || stars > currentStars) {
-        const newStarRatings = { ...state.starRatings, [levelId]: stars };
-        set({ starRatings: newStarRatings });
-        saveStarRatings(newStarRatings);
-      }
-    },
-
-    // Get star rating for a level
-    getStarRating: (levelId) => {
-      const state = get();
-      return state.starRatings[levelId] ?? null;
-    },
-
-    // Get current star rating based on current performance
-    getCurrentStarRating: () => {
-      const state = get();
-      return calculateStarRating(state.moveCount, state.optimalMoves);
-    },
-
     // Start game with selected difficulty
     startGame: (startLevel) => {
       const levelConfig = generateProgressiveLevel(startLevel);
       const tubes = cloneTubes(levelConfig.initialTubes);
-
-      // Calculate optimal moves for the starting level
-      const optimal = calculateOptimalMoves(tubes);
 
       set({
         levelConfig,
@@ -333,7 +254,6 @@ export const useGameStore = create<GameStore>((set, get) => {
         selectedTubeId: null,
         isCompleted: false,
         currentLevel: startLevel,
-        optimalMoves: optimal,
         gameStarted: true,
       });
     },
