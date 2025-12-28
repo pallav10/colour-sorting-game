@@ -35,6 +35,7 @@ export interface GameState {
   isCompleted: boolean;
   moveCount: number;
   currentLevel: number;
+  optimalMoves: number | null; // Calculated minimum moves to solve the level
 }
 
 export interface ValidationResult {

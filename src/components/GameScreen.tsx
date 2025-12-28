@@ -22,8 +22,10 @@ export const GameScreen = () => {
     moveCount,
     currentLevel,
     isCompleted,
+    optimalMoves,
     canUndo,
     getBestScore,
+    getCurrentStarRating,
     attemptMove,
     undo,
     restart,
@@ -32,6 +34,7 @@ export const GameScreen = () => {
   } = useGameStore();
 
   const bestScore = getBestScore(currentLevel);
+  const currentStars = getCurrentStarRating();
 
   const { shakingTubeId, triggerShake } = useShakeAnimation();
 
@@ -157,6 +160,8 @@ export const GameScreen = () => {
         <CompletionModal
           level={currentLevel}
           moveCount={moveCount}
+          optimalMoves={optimalMoves}
+          stars={currentStars}
           onNextLevel={nextLevel}
           onRestart={restart}
         />
