@@ -6,54 +6,30 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Tube as TubeType, Segment as SegmentType } from '../core/types';
 import { Segment } from './Segment';
-import { HoveringSegments } from './HoveringSegments';
-import { getContiguousTopSegments } from '../core/moveExecution';
 
 interface TubeProps {
   tube: TubeType;
+  visibleSegments: SegmentType[];
   isSelected: boolean;
   isShaking?: boolean;
-  isPouring?: boolean;
-  isReceiving?: boolean;
-  pouringSegments?: SegmentType[] | null;
-  receivingSegments?: SegmentType[] | null;
-  destPosition?: { x: number; y: number } | null;
-  onPouringComplete?: () => void;
   onClick: () => void;
 }
 
-export const Tube = ({ tube, isSelected, isShaking = false, isPouring = false, isReceiving = false, pouringSegments = null, receivingSegments = null, destPosition = null, onPouringComplete, onClick }: TubeProps) => {
-  // Get segments that would be moved (contiguous top segments of same color)
-  // Use pouringSegments if available (during animation), otherwise calculate from tube state
-  const hoveringSegments = pouringSegments || (isSelected ? getContiguousTopSegments(tube) : []);
-
-  // Calculate segments to render in tube
-  let remainingSegments: SegmentType[];
-  if (isPouring) {
-    // Source tube during pouring: tube state already updated, show all remaining segments
-    remainingSegments = tube.segments;
-  } else if (isReceiving && receivingSegments) {
-    // Destination tube: exclude the segments being poured (they're still flying)
-    remainingSegments = tube.segments.slice(0, tube.segments.length - receivingSegments.length);
-  } else if (isSelected) {
-    // Selected tube (hovering state): exclude hovering segments
-    remainingSegments = tube.segments.slice(0, tube.segments.length - hoveringSegments.length);
-  } else {
-    // Normal tube: show all segments
-    remainingSegments = tube.segments;
-  }
-
+export const Tube = ({
+  tube,
+  visibleSegments,
+  isSelected,
+  isShaking = false,
+  onClick,
+}: TubeProps) => {
   // Create empty slots to fill the tube (use tube's capacity)
-  const emptySlots = tube.capacity - remainingSegments.length;
+  const emptySlots = tube.capacity - visibleSegments.length;
 
   // Calculate dynamic height based on capacity
   // Each segment is 48px + 4px gap between segments
   const segmentHeight = 48;
   const gapBetweenSegments = 4;
   const tubeHeight = tube.capacity * (segmentHeight + gapBetweenSegments) + 16; // 16px for padding
-
-  // Calculate hover offset - segments should float above the tube top
-  const hoverOffset = -(tubeHeight + 20); // 20px above the tube top
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -90,6 +66,7 @@ export const Tube = ({ tube, isSelected, isShaking = false, isPouring = false, i
           flex flex-col-reverse justify-start
           bg-white/5 border-2 border-white/20 rounded-lg
           backdrop-blur-sm shadow-lg
+          overflow-visible
           ${isSelected ? 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-transparent' : ''}
         `}
         style={{
@@ -97,8 +74,8 @@ export const Tube = ({ tube, isSelected, isShaking = false, isPouring = false, i
           gap: `${gapBetweenSegments}px`
         }}
       >
-        {/* Filled segments from bottom to top (only non-hovering segments) */}
-        {remainingSegments.map((segment, index) => (
+        {/* Filled segments from bottom to top (only visible segments) */}
+        {visibleSegments.map((segment, index) => (
           <motion.div
             key={segment.id}
             initial={false}
@@ -123,19 +100,6 @@ export const Tube = ({ tube, isSelected, isShaking = false, isPouring = false, i
                 style={{ height: `${segmentHeight}px` }}
               />
             ))}
-        </AnimatePresence>
-
-        {/* Hovering segments when selected */}
-        <AnimatePresence>
-          {isSelected && hoveringSegments.length > 0 && (
-            <HoveringSegments
-              segments={hoveringSegments}
-              hoverOffset={hoverOffset}
-              isPouring={isPouring}
-              destPosition={destPosition}
-              onPouringComplete={onPouringComplete}
-            />
-          )}
         </AnimatePresence>
 
         {/* Glass effect overlay */}

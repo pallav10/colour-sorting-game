@@ -1,18 +1,24 @@
 /**
  * TubeContainer Component
  * Grid layout for displaying all tubes
+ * Calculates visibility and animation props for each tube
  */
 
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useRef, RefObject } from 'react';
-import type { Tube as TubeType, Segment } from '../core/types';
+import type { Tube as TubeType } from '../core/types';
 import { Tube } from './Tube';
+import { AnimatingSegments } from './AnimatingSegments';
+import { getContiguousTopSegments } from '../core/moveExecution';
+import {
+  calculateHoverOffset,
+  calculateLandingPosition,
+} from '../utils/segmentPositionCalculator';
 
 interface TubeContainerProps {
   tubes: TubeType[];
   selectedTubeId: number | null;
-  isPouringToTube: number | null;
-  pouringSegments: Segment[] | null;
+  pouringToTubeId: number | null;
   shakingTubeId?: number | null;
   onTubeClick: (tubeId: number, element?: HTMLElement) => void;
   onPouringComplete?: () => void;
@@ -22,106 +28,167 @@ interface TubeContainerProps {
 export const TubeContainer = ({
   tubes,
   selectedTubeId,
-  isPouringToTube,
-  pouringSegments,
+  pouringToTubeId,
   shakingTubeId = null,
   onTubeClick,
   onPouringComplete,
   tubeRefs,
 }: TubeContainerProps) => {
   const tubeElementsRef = useRef<Map<number, HTMLElement>>(new Map());
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Calculate destination position for pouring animation
-  const getDestPosition = (destTubeId: number) => {
-    if (!tubeRefs.current) return null;
+  // Get tube render props (visibility and animation data)
+  const getTubeRenderProps = (tube: TubeType) => {
+    const isSource = selectedTubeId === tube.id;
 
-    const sourceEl = tubeRefs.current.get(selectedTubeId!);
-    const destEl = tubeRefs.current.get(destTubeId);
+    // Get segments that are animating (if this is source tube)
+    const animatingSegments = isSource ? getContiguousTopSegments(tube) : [];
 
-    if (!sourceEl || !destEl || !pouringSegments) return null;
+    // Calculate visible segments (exclude animating ones)
+    // Note: tubes state is NOT updated until animation completes
+    // So we just hide the segments that are currently animating
+    const visibleSegments = isSource
+      ? tube.segments.slice(0, -animatingSegments.length) // Hide lifted segments
+      : tube.segments; // Show all
 
-    const sourceRect = sourceEl.getBoundingClientRect();
-    const destRect = destEl.getBoundingClientRect();
+    // Calculate hover offset for this tube
+    const hoverOffset = calculateHoverOffset(tube.capacity);
 
-    // Find the destination tube
-    const destTube = tubes.find((t) => t.id === destTubeId);
-    if (!destTube) return null;
+    // Calculate target position (if animating to a destination)
+    let targetPosition: { x: number; y: number } | null = null;
+    if (isSource && pouringToTubeId !== null && tubeRefs.current) {
+      const sourceEl = tubeRefs.current.get(tube.id);
+      const targetEl = tubeRefs.current.get(pouringToTubeId);
+      const targetTube = tubes.find((t) => t.id === pouringToTubeId);
 
-    // Calculate where segments should land in destination tube
-    // They should stack on top of existing segments (excluding the ones being poured)
-    const destSegmentCount = destTube.segments.length - pouringSegments.length;
-    const segmentHeight = 48;
-    const gapBetweenSegments = 4;
-    const tubePadding = 8; // Tube has p-2 = 8px padding
-
-    // IMPORTANT: HoveringSegments is positioned as "absolute bottom-0" within the tube,
-    // which means its bottom edge is at the tube's padding edge (8px above border bottom).
-    // However, sourceRect.bottom and destRect.bottom give us the border bottom.
-    // We need to account for this 8px offset.
-
-    // After existing segments, the flying segments should land at this Y offset from border bottom
-    const yOffsetFromDestBottom = tubePadding + (destSegmentCount * (segmentHeight + gapBetweenSegments));
-
-    // Calculate absolute Y position where HoveringSegments bottom should be (at padding edge)
-    const absoluteLandingY = destRect.bottom - yOffsetFromDestBottom;
-
-    // HoveringSegments starts at sourceRect.bottom - tubePadding (padding edge)
-    // Calculate relative offset from source tube's padding bottom
-    const sourceHoveringBottom = sourceRect.bottom - tubePadding;
+      if (sourceEl && targetEl && targetTube) {
+        const sourceRect = sourceEl.getBoundingClientRect();
+        const targetRect = targetEl.getBoundingClientRect();
+        targetPosition = calculateLandingPosition(
+          sourceRect,
+          targetRect,
+          targetTube
+        );
+      }
+    }
 
     return {
-      x: destRect.left - sourceRect.left,
-      y: absoluteLandingY - sourceHoveringBottom,
+      visibleSegments,
+      animatingSegments,
+      targetPosition,
+      hoverOffset,
     };
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4">
+    <div ref={containerRef} className="w-full max-w-4xl mx-auto px-4 relative">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
         className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 place-items-center"
       >
-        {tubes.map((tube, index) => (
-          <motion.div
-            key={tube.id}
-            ref={(el) => {
-              if (el) {
-                tubeElementsRef.current.set(tube.id, el);
-                if (tubeRefs.current) {
-                  tubeRefs.current.set(tube.id, el);
+        {tubes.map((tube, index) => {
+          const renderProps = getTubeRenderProps(tube);
+
+          return (
+            <motion.div
+              key={tube.id}
+              ref={(el) => {
+                if (el) {
+                  tubeElementsRef.current.set(tube.id, el);
+                  if (tubeRefs.current) {
+                    tubeRefs.current.set(tube.id, el);
+                  }
                 }
-              }
-            }}
-            initial={{ opacity: 0, scale: 0.5, y: 50 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: index * 0.05,
-              type: 'spring',
-              stiffness: 300,
-              damping: 20,
+              }}
+              initial={{ opacity: 0, scale: 0.5, y: 50 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{
+                duration: 0.4,
+                delay: index * 0.05,
+                type: 'spring',
+                stiffness: 300,
+                damping: 20,
+              }}
+            >
+              <Tube
+                tube={tube}
+                visibleSegments={renderProps.visibleSegments}
+                isSelected={selectedTubeId === tube.id}
+                isShaking={shakingTubeId === tube.id}
+                onClick={() => {
+                  const element = tubeElementsRef.current.get(tube.id);
+                  onTubeClick(tube.id, element);
+                }}
+              />
+            </motion.div>
+          );
+        })}
+      </motion.div>
+
+      {/* Render AnimatingSegments at container level to ensure proper z-index */}
+      {selectedTubeId !== null && (() => {
+        const sourceTube = tubes.find((t) => t.id === selectedTubeId);
+        if (!sourceTube) return null;
+
+        const animatingSegments = getContiguousTopSegments(sourceTube);
+        if (animatingSegments.length === 0) return null;
+
+        const hoverOffset = calculateHoverOffset(sourceTube.capacity);
+
+        // Calculate target position if pouring
+        let targetPosition: { x: number; y: number } | null = null;
+        if (pouringToTubeId !== null && tubeRefs.current) {
+          const sourceEl = tubeRefs.current.get(selectedTubeId);
+          const targetEl = tubeRefs.current.get(pouringToTubeId);
+          const targetTube = tubes.find((t) => t.id === pouringToTubeId);
+
+          if (sourceEl && targetEl && targetTube) {
+            const sourceRect = sourceEl.getBoundingClientRect();
+            const targetRect = targetEl.getBoundingClientRect();
+            targetPosition = calculateLandingPosition(
+              sourceRect,
+              targetRect,
+              targetTube
+            );
+          }
+        }
+
+        // Get source tube element position
+        const sourceEl = tubeRefs.current?.get(selectedTubeId);
+        if (!sourceEl || !containerRef.current) return null;
+
+        const sourceRect = sourceEl.getBoundingClientRect();
+        const containerRect = containerRef.current.getBoundingClientRect();
+
+        // Position wrapper at tube location
+        return (
+          <div
+            style={{
+              position: 'absolute',
+              left: sourceRect.left - containerRect.left,
+              top: sourceRect.top - containerRect.top,
+              width: sourceRect.width,
+              height: sourceRect.height,
+              pointerEvents: 'none',
+              zIndex: 1000,
             }}
           >
-            <Tube
-              tube={tube}
-              isSelected={selectedTubeId === tube.id}
-              isShaking={shakingTubeId === tube.id}
-              isPouring={selectedTubeId === tube.id && isPouringToTube !== null}
-              isReceiving={isPouringToTube === tube.id}
-              pouringSegments={selectedTubeId === tube.id ? pouringSegments : null}
-              receivingSegments={isPouringToTube === tube.id ? pouringSegments : null}
-              destPosition={selectedTubeId === tube.id && isPouringToTube !== null ? getDestPosition(isPouringToTube) : null}
-              onPouringComplete={selectedTubeId === tube.id ? onPouringComplete : undefined}
-              onClick={() => {
-                const element = tubeElementsRef.current.get(tube.id);
-                onTubeClick(tube.id, element);
-              }}
-            />
-          </motion.div>
-        ))}
-      </motion.div>
+            <AnimatePresence mode="wait">
+              <AnimatingSegments
+                key={`animating-${selectedTubeId}`}
+                segments={animatingSegments}
+                startPosition={targetPosition ? 'hovering' : 'inside-tube'}
+                targetPosition={targetPosition}
+                hoverOffset={hoverOffset}
+                visibleSegmentCount={sourceTube.segments.length - animatingSegments.length}
+                onComplete={onPouringComplete}
+              />
+            </AnimatePresence>
+          </div>
+        );
+      })()}
     </div>
   );
 };

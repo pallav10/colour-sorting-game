@@ -4,7 +4,7 @@
  */
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useRef, useCallback } from 'react';
+import { useRef, useCallback } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { useShakeAnimation } from '../hooks/useAnimation';
 import { Header } from './Header';
@@ -16,15 +16,15 @@ export const GameScreen = () => {
   const {
     tubes,
     selectedTubeId,
-    isPouringToTube,
-    pouringSegments,
+    pouringToTubeId,
     moveCount,
     currentLevel,
     isCompleted,
     canUndo,
     getBestScore,
-    attemptMove,
-    completePour,
+    selectTube,
+    pourToTube,
+    completeAnimation,
     undo,
     restart,
     nextLevel,
@@ -40,8 +40,8 @@ export const GameScreen = () => {
 
   // Handle animation complete
   const handlePouringComplete = useCallback(() => {
-    completePour();
-  }, [completePour]);
+    completeAnimation();
+  }, [completeAnimation]);
 
   const handleTubeClick = useCallback(
     (tubeId: number, element?: HTMLElement) => {
@@ -50,31 +50,35 @@ export const GameScreen = () => {
         tubeRefs.current.set(tubeId, element);
       }
 
-      // If a tube is selected and clicking a different tube
-      if (selectedTubeId !== null && selectedTubeId !== tubeId) {
-        const sourceTube = tubes.find((t) => t.id === selectedTubeId);
-        const destTube = tubes.find((t) => t.id === tubeId);
-
-        if (sourceTube && destTube) {
-          const validation = validateMove(sourceTube, destTube);
-
-          if (!validation.isValid) {
-            // Trigger shake animation for invalid move
-            triggerShake(tubeId);
-            attemptMove(tubeId);
-            return;
-          }
-
-          // Valid move - start pour animation
-          attemptMove(tubeId);
-          return;
-        }
+      // If no tube is selected, select this one
+      if (selectedTubeId === null) {
+        selectTube(tubeId);
+        return;
       }
 
-      // Select/deselect tube
-      attemptMove(tubeId);
+      // If clicking the same tube, deselect it
+      if (selectedTubeId === tubeId) {
+        selectTube(null);
+        return;
+      }
+
+      // Clicking a different tube - attempt to pour
+      const sourceTube = tubes.find((t) => t.id === selectedTubeId);
+      const destTube = tubes.find((t) => t.id === tubeId);
+
+      if (sourceTube && destTube) {
+        const validation = validateMove(sourceTube, destTube);
+
+        if (!validation.isValid) {
+          // Trigger shake animation for invalid move
+          triggerShake(tubeId);
+        }
+
+        // Pour (will bounce back if invalid)
+        pourToTube(tubeId);
+      }
     },
-    [selectedTubeId, tubes, triggerShake, attemptMove]
+    [selectedTubeId, tubes, triggerShake, selectTube, pourToTube]
   );
 
   return (
@@ -96,8 +100,7 @@ export const GameScreen = () => {
           key={`level-${currentLevel}`}
           tubes={tubes}
           selectedTubeId={selectedTubeId}
-          isPouringToTube={isPouringToTube}
-          pouringSegments={pouringSegments}
+          pouringToTubeId={pouringToTubeId}
           shakingTubeId={shakingTubeId}
           onTubeClick={handleTubeClick}
           onPouringComplete={handlePouringComplete}
